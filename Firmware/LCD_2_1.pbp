@@ -1,0 +1,714 @@
+'****************************************************************
+'*  Name    : LCD_2.0                                           *
+'*  Author  : Curtis Brooks                                     *
+'*  Notice  : You are free to use this code however you choose. *
+'*          : provided you credit the above author for the      *
+'*          : original source.                                  *
+'*  Date    : 02/13/2010                                        *
+'*  Version : 2.0                                               *
+'*  Notes   :                                                   *
+'*            LCD Connections:                                  *
+'*                  RA0 - R/S                                   *
+'*                  RA1 - E                                     *
+'*                  RA2 - R/W                                   *
+'*                  RB3 - BL (Backlight PWM)                    *
+'*                  RB4 - DB4                                   *
+'*                  RB5 - DB5                                   *
+'*                  RB6 - DB6                                   *
+'*                  RB7 - DB7                                   *                            
+'****************************************************************
+
+;-----[ Includes ]---------------------------------------------------------
+INCLUDE "16F628A.pbp"
+
+
+;-----[ Defines ]----------------------------------------------------------
+;Define oscillator speed in Mhz
+DEFINE  OSC         20
+
+;Define which port is connected to the LCD Data pins D4 - D7
+DEFINE  LCD_DREG    PORTB
+
+;Define starting Data bit on port (0 for 8-bit or 4 for 4-bit port)
+DEFINE  LCD_DBIT    4
+
+;Define LCD Bus size (4-bit or 8-bit)
+DEFINE  LCD_BITS    4
+
+;Define LCD Register Select (RS) port
+DEFINE  LCD_RSREG   PORTA
+
+;Define LCD Register Select (RS) bit
+DEFINE  LCD_RSBIT   0
+
+;Define LCD Read/Write (RW) Port
+DEFINE  LCD_RWREG   PORTA
+
+;Define LCD Read/Write (RW) bit
+DEFINE  LCD_RWBIT   2
+
+;Define LCD Enable (E) port
+DEFINE  LCD_EREG    PORTA
+
+;Define LCD Enable (E) bit
+DEFINE  LCD_EBIT    1
+
+;Define number of lines on LCD
+DEFINE  LCD_LINES   4
+
+;Define LCD command delay time
+DEFINE  LCD_COMMANDUS   2000
+
+;Define LCD data delay time
+DEFINE  LCD_DATAUS      50
+
+;Enable serial port & continuous receive
+DEFINE  HSER_RCSTA  90h
+DEFINE  HSER_TXSTA  20h
+
+;Clear overflow automatically
+DEFINE HSER_CLROERR 1
+
+;Turn off PORTA comparators
+CMCON = 7
+
+;Enable unmasked peripheral interrupts
+INTCON = %11000000
+
+;Declear interrupt handler
+ON INTERRUPT goto Serial_Interrupt
+
+;Enable interrupt on USART (Serial Receive)
+PIE1.5 = 1
+
+;-----[ Constants ]--------------------------------------------------------
+;Starting CGRAM address location
+CGRAM           CON         $40
+
+;Declare size of serial receive buffer
+buffer_size     con         80
+
+;-----[ Variables ]--------------------------------------------------------
+;High Baud Rate Select bit
+BRGH            VAR         TXSTA.2
+
+;Receive interrupt flag (1 = full, 0 = empty)
+RCIF            VAR         PIR1.5
+
+;Pointers to serial input array indexes
+index           var         byte
+index_out       var         byte
+
+;Serial input array
+Rx_Array        var         byte[buffer_size]
+
+;Incoming Data
+inData          VAR         BYTE
+
+;Stores LCD row number
+row             var         byte
+
+;Store current backlight value
+backlight       VAR         BYTE
+
+;LCD Command
+cmd             VAR         WORD
+
+;CGRAM address location
+addr            VAR         BYTE
+
+;Tracks cursor position
+cursor_pos      VAR         BYTE
+
+;String array to store baudrate text for display
+baud            VAR         byte[5]
+size            var         byte
+
+;Temp variable used for data written/read from EEPROM
+splashscreen    var         byte
+
+Device          var         byte[14]
+Version         var         byte[3]
+idx             var         byte
+
+;Custom character variables
+chr0            VAR         BYTE
+chr1            VAR         BYTE
+chr2            VAR         BYTE
+chr3            VAR         BYTE
+chr4            VAR         BYTE
+chr5            VAR         BYTE
+chr6            VAR         BYTE
+chr7            VAR         BYTE
+
+;-----[ EEPROM ]-----------------------------------------------------------
+
+;Reference labels for associated memory locations
+
+;EEPROM locations 0 and 1 store the default baud rate value (9600 baud)
+_BRGH            DATA   @0, 0
+_SPBRG           DATA   @1, 32
+
+;EEPROM location 2 stores the default backlight level (100%)
+_Backlight       data   @2, 255
+
+;EEPROM location 3 stores the default show splashscreen value (enabled)
+_Splashscreen    data   @3, 1
+
+_Device          data   @4, "LCD Controller"
+_Version         data   "2.0"
+
+;-----[ Initialization ]---------------------------------------------------
+Init:
+    ;Initialize buffer index pointers
+    index = 0
+    index_out = 0
+    
+    ;Read BRGH Baud Rate Select Bit and SPBRG Register from memory.  Set
+    ;baud rate based on these values. A better understanding of these 
+    ;settings can be gathered from the selected microcontroller data sheet.
+    ;GOSUB READ_BAUD_RATE 
+    read _BRGH, BRGH
+    read _SPBRG, SPBRG    
+    
+    ;Get the stored backlight setting from memory 
+    read _Backlight, backlight
+       
+    ;Get device name
+    for idx = 0 to 13
+        read (_Device + idx), Device[idx]
+    next
+    
+    ;Get device version
+    for idx = 0 to 2
+        read (_Version + idx), Version[idx]
+    next      
+    
+    ;Give some time for LCD to stabalize
+    PAUSE 500
+    
+    ;Clear display and turn on cursor
+    LCDOUT $FE, $01, $FE, $0E
+    
+    ;Set LCD backlight to full brightness
+    HPWM 1, backlight, 32767
+    
+    ;Initialize cursor and backlight variables
+    cursor_pos = 0 
+    
+    ;We read BRGH and SPBRG values from EEPROM.  BRGH will be 0 for low bit
+    ;rates and 1 for high bit rates. The below routine is used to display
+    ;the saved baud rate on initial power on of the LCD controller. This is
+    ;to aid in pairing the correct baud rate from the controller/PC to the 
+    ;LCD controller. A Clear Screen command should be sent to the LCD 
+    ;before sending further data unless you want the baud rate to stay on 
+    ;the display.
+    select case brgh
+        case 0
+            size = 4
+            ARRAYWRITE baud, ["9600"]
+
+        case 1
+            select case SPBRG
+                case 64
+                    size = 5
+                    ARRAYWRITE baud, ["19200"]
+
+                case 32
+                    size = 5
+                    ARRAYWRITE baud, ["38400"]
+
+                case 21
+                    size = 5
+                    ARRAYWRITE baud, ["57600"]                                        
+                    
+                case else
+            END SELECT
+    end select    
+      
+    ;Get splashscreen setting
+    read _Splashscreen, splashscreen
+    
+    if splashscreen = 1 then GOSUB SPLASH_SCREEN   
+      
+;-----[ Program Code ]-----------------------------------------------------    
+Main:
+    if (index <> index_out) then
+        index_out = index_out + 1
+        
+        ;Check for buffer overrun
+        if (index_out = buffer_size) then index_out = 0
+        
+        ;Get a character from the buffer
+        indata = Rx_Array[index_out]
+         
+        ;Looking for our sync byte to tell the controller the next byte 
+        ;is a command
+        IF inData = 254 THEN
+            
+            ;Wait for next character
+            while index = index_out
+            wend
+            
+            index_out = index_out + 1
+            
+            ;Check for buffer overrun
+            if (index_out = buffer_size) then index_out = 0
+            
+            ;Get the command
+            cmd = Rx_Array[index_out]  
+            
+            SELECT CASE cmd      
+                CASE 0
+                    ;Clear display contents                 
+                    LCDOUT $FE, $01
+    
+                    ;Reset cursor position
+                    cursor_pos = 0
+                
+                CASE 1
+                    ;Set cursor to uppermost left position (0,0)
+                    LCDOUT $FE, $02
+                    
+                    ;Reset cursor position
+                    cursor_pos = 0
+                   
+                CASE 2
+                    ;Shift cursor right or left
+                    HSERIN [inData]
+    
+                    SELECT CASE inData
+                        ;Shift cursor to the left
+                        CASE 0
+                            gosub check_end
+                            gosub update_position              
+        
+                        ;Shift cursor to the right
+                        case 1
+                            cursor_pos = cursor_pos + 1
+                            gosub check_beginning
+                            gosub update_position     
+        
+                        CASE ELSE
+                            ;GOTO Main
+                        END SELECT
+                
+                CASE 3
+                    ;Shift display right or left
+                    HSERIN [inData]
+    
+                    SELECT CASE inData
+                        ;Shift display to the left
+                        CASE 0
+                            cmd = $18  
+        
+                        ;Shift display to the right
+                        case 1
+                            cmd = $1C      
+        
+                        CASE ELSE
+                            goto main
+                    END SELECT
+    
+                    gosub send_command
+                
+                CASE 4
+                    ;Place cursor any where on the display                
+                    HSERIn [cursor_pos]
+    
+                    GOSUB UPDATE_POSITION
+                
+                CASE 5
+                    ;Set display/cursor properties
+                    HSERIN [inData]
+    
+                    SELECT CASE inData
+                    
+                        ;Set display off
+                        CASE 0
+                            cmd = $08      
+        
+                        ;Set display on
+                        case 1
+                            cmd = $0C      
+        
+                        ;Set blink on
+                        case 2
+                            cmd = $0D      
+        
+                        ;Set cursor on
+                        case 3
+                            cmd = $0E       
+        
+                        ;Set cursor and blink on
+                        case 4
+                            cmd = $0F                                            
+        
+                        CASE ELSE
+                            goto main
+                    END SELECT  
+    
+                    gosub send_command
+                
+                CASE 6
+                    ;Delete a character. Same as backspace
+                    ;Check for possible line wrap from beginning of each line
+                    gosub check_end
+    
+                    ;Keep cursor position updated
+                    gosub update_position
+    
+                    ;We're faking a backspace by writing a blank space which 
+                    ;increments the cursor position. Since we stored the true 
+                    ;cursor position we just reset it in the next statement
+                    lcdout $20
+    
+                    ;Reset the cursor position to what's store in VAR cursor_pos
+                    gosub update_position
+                
+                case 7
+                    ;Write user defined characters to LCD memory
+                    ;Get address location and 8 character bytes
+                    hserin [addr,chr0,chr1,chr2,chr3,chr4,chr5,chr6,chr7]
+    
+                    ;Write 8 character bytes to address location
+                    lcdout $FE,CGRAM+addr,chr0,chr1,chr2,chr3,chr4,chr5,_
+                    chr6,chr7
+    
+                    ;Ensure our display position stays the same after write
+                    gosub update_position
+                
+                case 8
+                    ;Display user defined characters from LCD memory
+                    ;Get memory location of character to display
+                    HSERIN [cmd]
+    
+                    ;Send character location request to LCD
+                    LCDOUT cmd
+    
+                    ;This is the same as a character write so ensure we 
+                    ;increment our cursor position variable
+                    cursor_pos = cursor_pos + 1
+    
+                    ;Check for possible line-wrap to the beginning of the next 
+                    ;line
+                    gosub check_beginning
+    
+                    ;Update cursor position
+                    gosub update_position
+                
+                CASE 9
+                    ;Turn on/off backlight
+                    HSERIN [inData]
+    
+                    SELECT CASE inData
+        
+                        ;Turn off HPWM and set bit low
+                        CASE 0
+                            HPWM 1, 0, 32767
+                            PORTB.3 = 0
+            
+                        ;Turn off HPWM and set bit high
+                        case 1
+                            HPWM 1, 0, 32767
+                            PORTB.3 = 1
+            
+                        CASE ELSE
+                    END SELECT
+                
+                CASE 10
+                    ;Set display backlight brightness
+                    HSERIN [backlight]
+    
+                    ;We want to keep HPWM turned on so we do some bounds 
+                    ;checking. If we allow backlight value to be set to 0 
+                    ;then, the HPWM will be turned off
+                    If backlight < 1 then backlight = 1
+    
+                    ;255 is the highest value we can send to the HPWM port so, 
+                    ;we ensure we don't crash that
+                    if backlight > 255 then backlight = 255
+    
+                    HPWM 1, backlight, 32767
+                
+                CASE 11
+                    ;Change baud rate and store in memory for recall
+                    hserin [indata]
+    
+                    select case indata
+                        ;9600 Baud
+                        case 0
+                            BRGH = 0
+                            SPBRG = 32
+        
+                        ;19200 Baud
+                        case 1
+                            BRGH = 1
+                            SPBRG = 64
+        
+                        ;38400 Baud
+                        case 2
+                            BRGH = 1
+                            SPBRG = 32
+        
+                        ;57600 Baud
+                        case 3
+                            BRGH = 1
+                            SPBRG = 21
+                  
+                        case else
+                            goto main
+                    end select
+    
+                    ;Save baud rate settings to EEPROM
+                    write _BRGH, BRGH
+                    write _SPBRG, SPBRG
+                
+                case 12
+                    ;Store current backlight setting in EEPROM
+                    write _Backlight, backlight
+                    
+                    ;Had to cheat a little since the last received 
+                    ;variable was still in the serial buffer. 
+                    ;Forcing a receive clears the the buffer and 
+                    ;control is passed back to Main either after 
+                    ;something is in the buffer or on timeout
+                    HSERIN 1000, Main,[inData]
+                
+                case 13
+                    ;Recall backlight setting from EEPROM
+                    read _Backlight, backlight
+                    
+                    ;Set backlight level to value read from EEPROM
+                    HPWM 1, backlight, 32767
+                    
+                    GOTO Main                
+                
+                case 14
+                    ;Clear selected row
+                    hserin [row]
+
+                    select case row
+        
+                        ;Row 1
+                        case 1
+                            row = $80
+       
+                        ;Row 2
+                        case 2
+                            row = $C0
+   
+                        ;Row 3
+                        case 3
+                            row = $94
+
+                        ;Row 4
+                        case 4
+                            row = $D4
+
+                        case else
+                    end select
+    
+                    ;Clear selected row
+                    lcdout $FE, row, REP " "\20
+    
+                    ;Put cursor at beginning of row
+                    cursor_pos = row
+    
+                    ;Return cursor to previous position
+                    gosub UPDATE_POSITION
+                                        
+                case 15
+                    
+                    ;Move cursor to first position of next line
+                    ;On row 1 so, go to position 1 on row 2
+                    IF (cursor_pos >= 0) AND (cursor_pos <= 19) THEN cursor_pos = 64
+                       
+                    ;On row 2 so, go to position 1 on row 3
+                    IF (cursor_pos >= 64) AND (cursor_pos <= 83) THEN cursor_pos = 20
+                              
+                    ;On row 3 so, go to position 1 on row 4
+                    IF (cursor_pos >= 20) AND (cursor_pos <= 39) THEN cursor_pos = 84
+                                     
+                    ;On row 4 so, go to position 1 on row 0
+                    IF (cursor_pos >= 84) AND (cursor_pos <= 103) THEN cursor_pos = 0
+                
+                    gosub UPDATE_POSITION
+                    
+                'Scroll cursor up
+                case 16
+                                      
+                    ;Scroll cursor position up
+                    ;Scroll row 1 position to row 4 position
+                    IF (cursor_pos >= 0) AND (cursor_pos <= 19) THEN cursor_pos = cursor_pos + 84
+                       
+                    ;Scroll row 2 position to row 1 position
+                    IF (cursor_pos >= 64) AND (cursor_pos <= 83) THEN cursor_pos = cursor_pos - 64
+                              
+                    ;Scroll row 3 position to row 2 position
+                    IF (cursor_pos >= 20) AND (cursor_pos <= 39) THEN cursor_pos = cursor_pos + 44
+                                     
+                    ;Scroll row 4 position to row 3 position
+                    IF (cursor_pos >= 84) AND (cursor_pos <= 103) THEN cursor_pos = cursor_pos - 64
+
+                    gosub UPDATE_POSITION
+                
+                'Scroll cursor down
+                case 17
+                    
+                    ;Scroll row 4 position to row 1 position
+                    IF (cursor_pos >= 84) AND (cursor_pos <= 103) THEN cursor_pos = cursor_pos - 84
+                    
+                    ;Scroll row 3 position to row 4 position
+                    IF (cursor_pos >= 20) AND (cursor_pos <= 39) THEN cursor_pos = cursor_pos + 64
+                    
+                    ;Scroll row 2 position to row 3 position
+                    IF (cursor_pos >= 64) AND (cursor_pos <= 83) THEN cursor_pos = cursor_pos - 44
+                    
+                    ;Scroll cursor position down
+                    ;Scroll row 1 position to row 2 position
+                    IF (cursor_pos >= 0) AND (cursor_pos <= 19) THEN cursor_pos = cursor_pos + 64
+                       
+                    GOSUB UPDATE_POSITION
+                    
+                CASE 18
+                    ;Turn on/off splash screen
+                    hserin [inData]
+                    
+                    select case inData
+                        case 0
+                            splashscreen = 0
+                        
+                        case 1
+                            splashscreen = 1
+                        case else
+                        goto main
+                    end select
+                    
+                    ;Write state to EEPROM
+                    write _Splashscreen, splashscreen
+                    
+                CASE ELSE
+                     GOTO Main           
+            END SELECT   
+        
+        ELSE
+            ;Don't allow interrupt to screw up sending characters
+            DISABLE INTERRUPT
+            
+            ;If data was not a sync byte then send it to the display
+            LCDOUT inData         
+            
+            ;Increment the cursor position variable
+            cursor_pos = cursor_pos + 1        
+            
+            ;Check to see if next cursor position is supposed to be at 
+            ;beginning of next line. If so, update the position
+            GOSUB check_beginning
+            
+            gosub update_position             
+            
+            ;Enable interrupts once done sending characters
+            ENABLE INTERRUPT    
+        ENDIF
+    endif  
+GOTO Main
+
+;--------------------------------------------------------------------------
+;Default splash screen displayed on startup
+;--------------------------------------------------------------------------
+SPLASH_SCREEN:            
+    lcdout "Name: ", STR Device\14,_
+    $FE, $C0, REP "-"\20,_
+    $FE, $94, "Version: ", STR Version\3,_
+    $FE, $D4, "Baud: ", STR baud\size
+    HSERIN [indata]
+RETURN
+   
+;--------------------------------------------------------------------------
+;Sends commands to the LCD
+;--------------------------------------------------------------------------
+SEND_COMMAND:
+    LCDOUT $FE, cmd
+return
+
+;--------------------------------------------------------------------------
+;Position cursor on display. Position is set by adding LCD mapping position 
+;to 128. So, for example, to place cursor at the second position of line 2 
+;you would send 128 + 65 = 193 to the LCD.
+;--------------------------------------------------------------------------
+UPDATE_POSITION:
+    LCDOUT $FE, $80 + cursor_pos
+return
+
+;--------------------------------------------------------------------------
+;Check for possible line-wrap to the beginning of the next line and update 
+;as necessary
+;--------------------------------------------------------------------------
+CHECK_BEGINNING:
+    SELECT CASE cursor_pos
+        ;End of line 1, wrap to beginning of line 2
+        
+        case 20
+            cursor_pos = 64
+        
+        ;End of line 2, wrap to beginning of line 3
+        case 84
+            cursor_pos = 20
+        
+        ;End of line 3, wrap to beginning of line 4
+        case 40
+            cursor_pos = 84
+        
+        ;End of line 4, wrap to beginning of line 1
+        case 104
+            cursor_pos = 0
+        
+        CASE ELSE
+    END SELECT
+RETURN
+
+;--------------------------------------------------------------------------
+;Check for possible line-wrap to the end of the previous line and update as
+;necessary
+;--------------------------------------------------------------------------
+CHECK_END:
+    SELECT CASE cursor_pos
+        ;Beginning of line 4, wrap to end of line 3
+        case 84
+            cursor_pos = 39
+        ;Beginning of line 3, wrap to end of line 2
+        case 20
+            cursor_pos = 83
+        ;Beginning of line 2, wrap to end of line 1
+        case 64
+            cursor_pos = 19
+        ;Beginning of line 1, wrap to end of line 4
+        case 0
+            cursor_pos = 103
+        CASE ELSE
+            ;If not at the beginning of any line then, decrement cursor
+            cursor_pos = cursor_pos - 1
+    END SELECT
+RETURN
+
+;--------------------------------------------------------------------------
+;Serial Interrupt routine
+;--------------------------------------------------------------------------
+;Make sure we do interrupt our interrupt
+disable
+Serial_Interrupt:
+    ;Check for serial input
+    if (RCIF = 1) then
+        
+        ;Keep track of serial buffer
+        index = index + 1
+        
+        ;If buffer over-flows reset buffer
+        if (index = buffer_size) then index = 0
+            
+        ;Get serial input and store in array
+        hserin [Rx_Array[index]]
+    endif
+resume
+enable

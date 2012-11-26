@@ -1,0 +1,5 @@
+L:\My Documents\Current Projects\Hobbybotics LCD Controller\Applications\Serial Port Object\clsSerialPort\bin\Debug\clsSerialPort.dll
+L:\My Documents\Current Projects\Hobbybotics LCD Controller\Applications\Serial Port Object\clsSerialPort\bin\Debug\clsSerialPort.pdb
+L:\My Documents\Current Projects\Hobbybotics LCD Controller\Applications\Serial Port Object\clsSerialPort\obj\Debug\ResolveAssemblyReference.cache
+L:\My Documents\Current Projects\Hobbybotics LCD Controller\Applications\Serial Port Object\clsSerialPort\obj\Debug\clsSerialPort.dll
+L:\My Documents\Current Projects\Hobbybotics LCD Controller\Applications\Serial Port Object\clsSerialPort\obj\Debug\clsSerialPort.pdb

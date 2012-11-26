@@ -1,0 +1,11 @@
+'****************************************************************
+'*  Name    : 16F628A.BAS                                       *
+'*  Author  : Curtis Brooks                                     *
+'*  Notice  : Copyright (c) 2010 Hobbybotics                    *
+'*          : All Rights Reserved                               *
+'*  Date    : 1/11/2010                                         *
+'*  Version : 1.0                                               *
+'*  Notes   : Fuze settings for mplab                           *
+'*          :                                                   *
+'****************************************************************
+@ __config _HS_OSC & _WDT_ON & _BODEN_OFF & _PWRTE_ON & _CP_OFF & _DATA_CP_OFF & _LVP_OFF & _MCLRE_ON

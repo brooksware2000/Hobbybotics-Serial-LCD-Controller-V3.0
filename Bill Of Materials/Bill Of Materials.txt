@@ -1,0 +1,22 @@
+C1	0.1uf	
+D1	1N4148	
+J1	3P Header	
+J2	3P Header	
+J3	3P Jumper	
+J4	6P Header	
+J5	6P Header	
+J6	6P Polarized Header	
+JP1	Shorting Jumper	
+JP2	Shorting Jumper	
+Q1	MMBT2222A	
+Q2	MMBT2222A	
+R1	1M	
+R2	10k	
+R3	1k	
+R4	22k	
+R5	15	
+R6	10k	
+R7	1k	
+R8	10k	
+U1	PIC16F628A	
+Y1	20Mhz	

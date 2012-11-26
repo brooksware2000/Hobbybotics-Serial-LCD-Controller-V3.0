@@ -1,0 +1,9 @@
+L:\My Documents\Current Projects\Hobbybotics LCD Controller\Applications\LCD Demo V2.2\LCD_Demo_V2.2\bin\Debug\LCD_Demo_V2.2.exe
+L:\My Documents\Current Projects\Hobbybotics LCD Controller\Applications\LCD Demo V2.2\LCD_Demo_V2.2\bin\Debug\LCD_Demo_V2.2.pdb
+L:\My Documents\Current Projects\Hobbybotics LCD Controller\Applications\LCD Demo V2.2\LCD_Demo_V2.2\obj\Debug\ResolveAssemblyReference.cache
+L:\My Documents\Current Projects\Hobbybotics LCD Controller\Applications\LCD Demo V2.2\LCD_Demo_V2.2\obj\Debug\LCD_Demo_V2._2.Form1.resources
+L:\My Documents\Current Projects\Hobbybotics LCD Controller\Applications\LCD Demo V2.2\LCD_Demo_V2.2\obj\Debug\LCD_Demo_V2._2.Properties.Resources.resources
+L:\My Documents\Current Projects\Hobbybotics LCD Controller\Applications\LCD Demo V2.2\LCD_Demo_V2.2\obj\Debug\LCD_Demo_V2.2.csproj.GenerateResource.Cache
+L:\My Documents\Current Projects\Hobbybotics LCD Controller\Applications\LCD Demo V2.2\LCD_Demo_V2.2\obj\Debug\LCD_Demo_V2.2.exe
+L:\My Documents\Current Projects\Hobbybotics LCD Controller\Applications\LCD Demo V2.2\LCD_Demo_V2.2\obj\Debug\LCD_Demo_V2.2.pdb
+L:\My Documents\Current Projects\Hobbybotics LCD Controller\Applications\LCD Demo V2.2\LCD_Demo_V2.2\bin\Debug\clsSerialPort.dll
